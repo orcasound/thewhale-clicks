@@ -31,6 +31,9 @@ COLOR_IDLE = "#d9d9d9"
 COLOR_CHOICE = "#cfe2ff"
 COLOR_RIGHT = "#7bd389"
 COLOR_WRONG = "#f28b82"
+# Hover colours. Tk draws a button under the mouse in its activebackground,
+# so result colours must set it too or the clicked button never shows them.
+HOVER = {COLOR_IDLE: "#ececec", COLOR_CHOICE: "#a8c8ff"}
 
 
 def sound_path(row, col):
@@ -40,6 +43,10 @@ def sound_path(row, col):
 def sound_name(cell):
     row, col = cell
     return f"{VISITORS[col][0]}{TARGETS[row][0]} ({VISITORS[col][1]} / {TARGETS[row][1]})"
+
+
+def paint(btn, color):
+    btn.config(bg=color, activebackground=HOVER.get(color, color))
 
 
 def letter_grade(pct):
@@ -98,8 +105,9 @@ class ClickTrainer:
         self.play_buttons = {}
         for r in range(3):
             for c in range(3):
-                btn = tk.Button(grid, text="P", width=6, height=2, bg=COLOR_IDLE,
+                btn = tk.Button(grid, text="P", width=6, height=2,
                                 command=lambda cell=(r, c): self.on_play(cell))
+                paint(btn, COLOR_IDLE)
                 btn.grid(row=2 + r, column=2 + c, padx=4, pady=4)
                 self.play_buttons[(r, c)] = btn
 
@@ -162,10 +170,11 @@ class ClickTrainer:
         for cell, btn in self.play_buttons.items():
             if self.quiz_active:
                 enabled = cell in self.candidates
-                btn.config(bg=COLOR_CHOICE if enabled else COLOR_IDLE,
-                           state="normal" if enabled else "disabled")
+                paint(btn, COLOR_CHOICE if enabled else COLOR_IDLE)
+                btn.config(state="normal" if enabled else "disabled")
             else:
-                btn.config(bg=COLOR_IDLE, state="normal")
+                paint(btn, COLOR_IDLE)
+                btn.config(state="normal")
 
     # ---------------------------------------------------------------- Learn
     def on_play(self, cell):
@@ -220,11 +229,11 @@ class ClickTrainer:
         self.results.append((self.current, cell))
         correct = cell == self.current
         if correct:
-            self.play_buttons[cell].config(bg=COLOR_RIGHT)
+            paint(self.play_buttons[cell], COLOR_RIGHT)
             self.status_label.config(text="Correct!")
         else:
-            self.play_buttons[cell].config(bg=COLOR_WRONG)
-            self.play_buttons[self.current].config(bg=COLOR_RIGHT)
+            paint(self.play_buttons[cell], COLOR_WRONG)
+            paint(self.play_buttons[self.current], COLOR_RIGHT)
             self.status_label.config(text=f"No, that was {sound_name(self.current)}")
         self.trial_index += 1
         self.pending_after = self.root.after(NEXT_DELAY_MS, self.next_trial)
