@@ -15,6 +15,7 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import messagebox
 
+import numpy as np
 import pygame
 
 SOUND_DIR = Path(__file__).resolve().parent / "ScottsClicks"
@@ -26,6 +27,7 @@ TARGETS = [("1", "salmon"), ("2", "seal"), ("3", "squid")]
 NUM_TRIALS = 10        # questions per quiz
 NEXT_DELAY_MS = 1000   # pause after an answer before the next sound plays
 FIRST_DELAY_MS = 500   # pause before the first sound of a quiz
+MAX_GAIN_PCT = 400     # volume slider top: 400% = samples multiplied by 4
 
 COLOR_IDLE = "#d9d9d9"
 COLOR_CHOICE = "#cfe2ff"
@@ -61,15 +63,22 @@ class ClickTrainer:
         self.root = root
         root.title("Echolocation Click Trainer")
 
-        pygame.mixer.init()
-        self.sounds = {}
+        pygame.mixer.init(size=-16)  # 16-bit samples, matching the np.int16 scaling
+        self.samples = {}          # peak-normalized float samples, scaled at play time
+        self.playing = None        # keeps the playing Sound alive
         for r in range(3):
             for c in range(3):
                 path = sound_path(r, c)
                 if not path.exists():
                     messagebox.showerror("Missing sound", f"Could not find:\n{path}")
                     sys.exit(1)
-                self.sounds[(r, c)] = pygame.mixer.Sound(str(path))
+                self.samples[(r, c)] = pygame.sndarray.array(
+                    pygame.mixer.Sound(str(path))).astype(np.float32)
+        # Normalize every clip to the same peak (the loudest clip's) so that
+        # loudness is not a clue to which sound is playing.
+        target = max(np.abs(a).max() for a in self.samples.values())
+        for cell, a in self.samples.items():
+            a *= target / np.abs(a).max()
 
         # Quiz state
         self.quiz_active = False
@@ -82,9 +91,8 @@ class ClickTrainer:
         self.results = []          # list of (played_cell, answered_cell)
         self.pending_after = None
 
-        self.volume = tk.IntVar(value=70)
+        self.volume = tk.IntVar(value=100)
         self._build_ui()
-        self.set_volume()
 
     # ------------------------------------------------------------------ UI
     def _build_ui(self):
@@ -141,11 +149,11 @@ class ClickTrainer:
         # Volume
         vol = tk.Frame(self.root, padx=16, pady=10)
         vol.pack()
-        tk.Label(vol, text="Volume").pack(side="left")
-        tk.Button(vol, text="−", width=3, command=lambda: self.nudge_volume(-10)).pack(side="left")
-        tk.Scale(vol, from_=0, to=100, orient="horizontal", length=200,
-                 variable=self.volume, command=lambda _v: self.set_volume()).pack(side="left")
-        tk.Button(vol, text="+", width=3, command=lambda: self.nudge_volume(10)).pack(side="left")
+        tk.Label(vol, text="Volume %").pack(side="left")
+        tk.Button(vol, text="−", width=3, command=lambda: self.nudge_volume(-25)).pack(side="left")
+        tk.Scale(vol, from_=0, to=MAX_GAIN_PCT, resolution=5, orient="horizontal", length=240,
+                 variable=self.volume).pack(side="left")
+        tk.Button(vol, text="+", width=3, command=lambda: self.nudge_volume(25)).pack(side="left")
 
     def _quiz_button(self, parent, row, col, cells, title):
         btn = tk.Button(parent, text="Q", width=6, height=2,
@@ -153,18 +161,16 @@ class ClickTrainer:
         btn.grid(row=row, column=col, padx=4, pady=4)
         self.quiz_buttons.append(btn)
 
-    def set_volume(self):
-        level = self.volume.get() / 100
-        for snd in self.sounds.values():
-            snd.set_volume(level)
-
     def nudge_volume(self, delta):
-        self.volume.set(max(0, min(100, self.volume.get() + delta)))
-        self.set_volume()
+        self.volume.set(max(0, min(MAX_GAIN_PCT, self.volume.get() + delta)))
 
     def play(self, cell):
+        """Play a sound with its samples multiplied by the volume setting."""
         pygame.mixer.stop()
-        self.sounds[cell].play()
+        gain = self.volume.get() / 100
+        scaled = np.clip(self.samples[cell] * gain, -32768, 32767).astype(np.int16)
+        self.playing = pygame.sndarray.make_sound(scaled)
+        self.playing.play()
 
     def color_buttons(self):
         for cell, btn in self.play_buttons.items():

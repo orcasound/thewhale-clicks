@@ -40,7 +40,7 @@ Target  2     P     P     P     Q
         3     P     P     P     Q
               Q     Q     Q     Q
 
-        Volume  [-] ======o==== [+]
+        Volume %  [-] ===o======== [+]
 ```
 
 **Learn mode** (the default): press any **P** button to hear that sound.
@@ -62,9 +62,16 @@ second later. Use **Replay sound** to hear the current one again, or
 After 10 sounds you get a score, a letter grade (A ≥ 90%, B ≥ 80%, C ≥ 70%,
 D ≥ 60%), and a list of the sounds you confused.
 
+**Volume** runs from 0% to 400%. It multiplies the sound samples themselves,
+not the player volume, so you can boost these quiet recordings above their
+original level. All nine clips are normalized to the same peak level (that of
+the loudest recording) so loudness doesn't give away the answer; 100% plays
+them at that level.
+
 Suggested progression: master each column, then each row, then the full quiz.
 
 ## Settings
 
 The number of questions and the pause between them are constants at the top
-of `click_trainer.py` (`NUM_TRIALS`, `NEXT_DELAY_MS`).
+of `click_trainer.py` (`NUM_TRIALS`, `NEXT_DELAY_MS`), as is the top of the volume range
+(`MAX_GAIN_PCT`).
