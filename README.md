@@ -15,14 +15,68 @@ each target is a different echo.
 
 ## Setup
 
-Requires Python 3.8+ with Tkinter.
-On Debian/Ubuntu, install Tkinter with `sudo apt install python3-tk` if needed.
+Requires Python 3.8+ with Tkinter, plus `git`. The Python packages
+(`numpy`, `pygame`) are installed from `requirements.txt`.
+
+### 1. Install the prerequisites for your system
+
+**Ubuntu / Debian**
+
+```bash
+sudo apt update
+sudo apt install git python3 python3-venv python3-pip python3-tk
+```
+
+**macOS**
+
+- Install Python 3 from [python.org](https://www.python.org/downloads/macos/);
+  that installer includes Tkinter. `git` comes with the Xcode command-line
+  tools (`xcode-select --install`).
+- If you use Homebrew instead: `brew install git python python-tk`.
+
+**Windows**
+
+- Install Python 3 from [python.org](https://www.python.org/downloads/windows/).
+  In the installer, tick **Add python.exe to PATH** and keep
+  **tcl/tk and IDLE** selected (that is Tkinter).
+- Install [Git for Windows](https://git-scm.com/download/win).
+
+**iOS / iPadOS** is not supported: the trainer is a Tkinter desktop app and
+needs a computer running Linux, macOS or Windows.
+
+### 2. Clone the repository
+
+```bash
+git clone https://github.com/orcasound/thewhale-clicks.git
+cd thewhale-clicks
+```
+
+### 3. Create a virtual environment and install the requirements
+
+Ubuntu / macOS:
 
 ```bash
 python3 -m venv .venv
-source .venv/bin/activate        # Windows: .venv\Scripts\activate
+source .venv/bin/activate
 pip install -r requirements.txt
 ```
+
+Windows (Command Prompt or PowerShell):
+
+```bat
+py -m venv .venv
+.venv\Scripts\activate
+pip install -r requirements.txt
+```
+
+If PowerShell refuses to run the activate script, run
+`Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` once, then try again.
+
+To check that Tkinter is available: `python -m tkinter` should open a small
+test window.
+
+Activate the virtual environment again (the `activate` line above) each time
+you open a new terminal to run the trainer.
 
 ## Run
 
