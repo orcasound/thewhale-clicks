@@ -161,6 +161,7 @@ class ClickTrainer:
         btn.grid(row=row, column=col, padx=4, pady=4)
         self.quiz_buttons.append(btn)
 
+
     def nudge_volume(self, delta):
         self.volume.set(max(0, min(MAX_GAIN_PCT, self.volume.get() + delta)))
 
