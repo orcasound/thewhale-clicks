@@ -1,0 +1,592 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Echolocation Click Trainer</title>
+<!--
+  Web version of click_trainer.py, for GitHub Pages. Same game: a 3x3 matrix
+  of sounds, columns are visitors (low / mid / high clickers), rows are
+  targets (salmon, seal, squid). Learn mode plays any P button; a Q button
+  starts a 10-question quiz on a column, a row, or all nine sounds.
+
+  The sounds are fetched from ScottsClicks/, so the page has to be served
+  over http(s); opening the file directly from disk will not load them.
+  To test locally:  python3 -m http.server  then open http://localhost:8000
+-->
+<style>
+  :root {
+    --bg: #f6f7f9;
+    --panel: #ffffff;
+    --text: #1d2330;
+    --muted: #5b6475;
+    --border: #c9ced8;
+    --idle: #e3e6eb;
+    --idle-hover: #f1f3f6;
+    --choice: #cfe2ff;
+    --choice-hover: #a8c8ff;
+    --right: #7bd389;
+    --wrong: #f28b82;
+    --quiz: #fff1c7;
+    --quiz-hover: #ffe08a;
+    --accent: #2a64c5;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #14171c;
+      --panel: #1d2128;
+      --text: #e6e9ef;
+      --muted: #9aa3b2;
+      --border: #3a404b;
+      --idle: #2c313a;
+      --idle-hover: #373d48;
+      --choice: #2c4a7a;
+      --choice-hover: #3a5f9c;
+      --right: #2f8a45;
+      --wrong: #a8433b;
+      --quiz: #4d4220;
+      --quiz-hover: #66582a;
+      --accent: #7ea8ff;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #14171c;
+    --panel: #1d2128;
+    --text: #e6e9ef;
+    --muted: #9aa3b2;
+    --border: #3a404b;
+    --idle: #2c313a;
+    --idle-hover: #373d48;
+    --choice: #2c4a7a;
+    --choice-hover: #3a5f9c;
+    --right: #2f8a45;
+    --wrong: #a8433b;
+    --quiz: #4d4220;
+    --quiz-hover: #66582a;
+    --accent: #7ea8ff;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 16px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  main {
+    max-width: 560px;
+    margin: 0 auto;
+    padding: 20px 16px 40px;
+  }
+  h1 { font-size: 1.4rem; margin: 0 0 4px; }
+  .lede { color: var(--muted); margin: 0 0 16px; font-size: 0.95rem; }
+
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px 12px;
+  }
+
+  /* Matrix: [axis label][row label][A][B][C][Q] */
+  .matrix {
+    display: grid;
+    grid-template-columns: 1.6em auto repeat(4, minmax(0, 64px));
+    gap: 8px;
+    justify-content: center;
+    align-items: center;
+  }
+  .axis { font-weight: 700; text-align: center; }
+  .axis.target {
+    grid-row: 3 / span 3;
+    writing-mode: vertical-rl;
+    transform: rotate(180deg);
+  }
+  .col-head { text-align: center; font-size: 0.85rem; line-height: 1.2; }
+  .col-head small, .row-head small { color: var(--muted); }
+  .row-head { text-align: right; font-size: 0.9rem; padding-right: 2px; white-space: nowrap; }
+
+  .cell {
+    height: 52px;
+    width: 100%;
+    font: inherit;
+    font-weight: 700;
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--idle);
+    cursor: pointer;
+    touch-action: manipulation;
+  }
+  .cell:disabled { cursor: default; opacity: 0.45; }
+  .cell.q { background: var(--quiz); }
+  .cell.choice { background: var(--choice); }
+  .cell.right { background: var(--right); opacity: 1; }
+  .cell.wrong { background: var(--wrong); opacity: 1; }
+  @media (hover: hover) {
+    .cell:not(:disabled):hover { background: var(--idle-hover); }
+    .cell.q:not(:disabled):hover { background: var(--quiz-hover); }
+    .cell.choice:not(:disabled):hover { background: var(--choice-hover); }
+    /* Result colours must win over hover, or the clicked button never shows them. */
+    .cell.right:hover { background: var(--right); }
+    .cell.wrong:hover { background: var(--wrong); }
+  }
+  .cell:focus-visible, button:focus-visible, input:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  .status { text-align: center; margin-top: 16px; min-height: 3.2em; }
+  #mode { font-weight: 700; }
+  #message { color: var(--muted); }
+
+  .controls { display: flex; gap: 8px; justify-content: center; margin-top: 8px; flex-wrap: wrap; }
+  .btn {
+    font: inherit;
+    padding: 6px 14px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--idle);
+    color: var(--text);
+    cursor: pointer;
+  }
+  .btn:disabled { opacity: 0.45; cursor: default; }
+
+  .volume {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    justify-content: center;
+    margin-top: 16px;
+    flex-wrap: wrap;
+  }
+  .volume input[type=range] { flex: 1 1 160px; max-width: 260px; accent-color: var(--accent); }
+  .volume output { min-width: 3.5em; text-align: right; font-variant-numeric: tabular-nums; }
+  .volume .btn { width: 2.4em; padding: 4px 0; }
+
+  #loading { text-align: center; color: var(--muted); margin-top: 12px; }
+  #loading.error { color: var(--wrong); }
+
+  details { margin-top: 20px; }
+  summary { cursor: pointer; font-weight: 600; }
+  details p, details li { font-size: 0.95rem; }
+
+  dialog {
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--panel);
+    color: var(--text);
+    max-width: min(420px, calc(100vw - 32px));
+    padding: 20px;
+  }
+  dialog::backdrop { background: rgb(0 0 0 / 0.4); }
+  dialog h2 { margin: 0 0 8px; font-size: 1.15rem; }
+  .grade { font-size: 2rem; font-weight: 800; margin: 4px 0; }
+  #mistakes { padding-left: 1.2em; font-size: 0.92rem; }
+  #mistakes li { margin-bottom: 6px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Echolocation Click Trainer</h1>
+  <p class="lede">Learn to tell apart three whales (visitors) clicking at three
+    targets. Press <b>P</b> to listen, <b>Q</b> to quiz yourself.</p>
+
+  <div class="panel">
+    <div class="matrix" id="matrix"></div>
+
+    <div class="status">
+      <div id="mode">Learn mode: press P to hear a sound</div>
+      <div id="message">Press a Q button to start a quiz</div>
+    </div>
+    <div class="controls">
+      <button class="btn" id="replay" disabled>Replay sound</button>
+      <button class="btn" id="stop" disabled>Stop quiz</button>
+    </div>
+
+    <div class="volume">
+      <label for="vol">Volume %</label>
+      <button class="btn" id="vol-down" aria-label="Volume down">−</button>
+      <input type="range" id="vol" min="0" max="400" step="5" value="100">
+      <button class="btn" id="vol-up" aria-label="Volume up">+</button>
+      <output id="vol-out" for="vol">100</output>
+    </div>
+    <div id="loading">Loading sounds…</div>
+  </div>
+
+  <details>
+    <summary>How to play</summary>
+    <p><b>Learn mode</b> (the default): press any <b>P</b> button to hear that sound.</p>
+    <p><b>Quiz mode</b>: press a <b>Q</b> button.</p>
+    <ul>
+      <li><b>Q under a column</b> quizzes the three targets for that visitor
+        (start here: same whale, different echoes).</li>
+      <li><b>Q at the end of a row</b> quizzes the three visitors for that target
+        (same echo, different whales).</li>
+      <li><b>Q in the bottom-right corner</b> quizzes all nine sounds.</li>
+    </ul>
+    <p>During a quiz only the buttons in play are enabled (shaded blue). A sound
+      plays; press the <b>P</b> button you think made it. Your choice turns green
+      if right, or red with the correct answer shown in green. After 10 sounds you
+      get a score, a letter grade and a list of the sounds you confused.</p>
+    <p><b>Volume</b> runs from 0% to 400% and multiplies the sound samples, so you
+      can boost these quiet recordings. All nine clips are normalized to the same
+      peak so loudness doesn't give away the answer.</p>
+    <p>Headphones help. On an iPhone or iPad, make sure the ring/silent switch is
+      not set to silent.</p>
+    <p>Suggested progression: master each column, then each row, then the full quiz.</p>
+  </details>
+</main>
+
+<dialog id="results">
+  <h2 id="res-title"></h2>
+  <div id="res-score"></div>
+  <div class="grade" id="res-grade"></div>
+  <div id="res-mistakes-wrap">
+    <b>Mistakes:</b>
+    <ul id="mistakes"></ul>
+  </div>
+  <form method="dialog" style="text-align:right">
+    <button class="btn" autofocus>OK</button>
+  </form>
+</dialog>
+
+<script>
+"use strict";
+
+const SOUND_DIR = "ScottsClicks";
+
+// Columns (visitors) and rows (targets), and how they map to file names.
+const VISITORS = [["A", "low"], ["B", "mid"], ["C", "high"]];
+const TARGETS = [["1", "salmon"], ["2", "seal"], ["3", "squid"]];
+
+const NUM_TRIALS = 10;        // questions per quiz
+const NEXT_DELAY_MS = 1000;   // pause after an answer before the next sound plays
+const FIRST_DELAY_MS = 500;   // pause before the first sound of a quiz
+const MAX_GAIN_PCT = 400;     // volume slider top: 400% = samples multiplied by 4
+
+const soundUrl = (r, c) => `${SOUND_DIR}/echo-${VISITORS[c][1]}-clicker-${TARGETS[r][1]}.mp3`;
+const key = (r, c) => `${r},${c}`;
+const sameCell = (a, b) => a[0] === b[0] && a[1] === b[1];
+
+function soundName([r, c]) {
+  return `${VISITORS[c][0]}${TARGETS[r][0]} (${VISITORS[c][1]} / ${TARGETS[r][1]})`;
+}
+
+function letterGrade(pct) {
+  for (const [cutoff, letter] of [[90, "A"], [80, "B"], [70, "C"], [60, "D"]]) {
+    if (pct >= cutoff) return letter;
+  }
+  return "F";
+}
+
+const $ = id => document.getElementById(id);
+
+// ---------------------------------------------------------------- Audio
+const AudioCtx = window.AudioContext || window.webkitAudioContext;
+const ctx = new AudioCtx();
+const samples = {};      // peak-normalized AudioBuffers, scaled at play time
+let playing = null;      // the currently playing source node
+let loaded = false;
+
+function decode(buf) {
+  // Promise form isn't available in older Safari, so use the callbacks.
+  return new Promise((resolve, reject) => ctx.decodeAudioData(buf, resolve, reject));
+}
+
+async function loadSounds() {
+  const cells = [];
+  for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++) cells.push([r, c]);
+  await Promise.all(cells.map(async ([r, c]) => {
+    const url = soundUrl(r, c);
+    const resp = await fetch(url);
+    if (!resp.ok) throw new Error(`Could not load ${url} (${resp.status})`);
+    samples[key(r, c)] = await decode(await resp.arrayBuffer());
+  }));
+
+  // Normalize every clip to the same peak (the loudest clip's) so that
+  // loudness is not a clue to which sound is playing.
+  const peakOf = b => {
+    let p = 0;
+    for (let ch = 0; ch < b.numberOfChannels; ch++) {
+      const d = b.getChannelData(ch);
+      for (let i = 0; i < d.length; i++) p = Math.max(p, Math.abs(d[i]));
+    }
+    return p;
+  };
+  const peaks = Object.fromEntries(Object.entries(samples).map(([k, b]) => [k, peakOf(b)]));
+  const target = Math.max(...Object.values(peaks));
+  for (const [k, b] of Object.entries(samples)) {
+    const g = target / peaks[k];
+    for (let ch = 0; ch < b.numberOfChannels; ch++) {
+      const d = b.getChannelData(ch);
+      for (let i = 0; i < d.length; i++) d[i] *= g;
+    }
+  }
+}
+
+function stopSound() {
+  if (playing) {
+    try { playing.stop(); } catch (e) { /* already stopped */ }
+    playing = null;
+  }
+}
+
+/** Play a sound with its samples multiplied by the volume setting. */
+function play(cell) {
+  stopSound();
+  if (ctx.state !== "running") ctx.resume();
+  const src = samples[key(...cell)];
+  const gain = Number($("vol").value) / 100;
+  // Scale and clip into a fresh buffer, like the desktop version's int16 clip.
+  const out = ctx.createBuffer(src.numberOfChannels, src.length, src.sampleRate);
+  for (let ch = 0; ch < src.numberOfChannels; ch++) {
+    const s = src.getChannelData(ch), d = out.getChannelData(ch);
+    for (let i = 0; i < s.length; i++) d[i] = Math.max(-1, Math.min(1, s[i] * gain));
+  }
+  playing = ctx.createBufferSource();
+  playing.buffer = out;
+  playing.connect(ctx.destination);
+  playing.start();
+}
+
+// ---------------------------------------------------------------- UI
+const playButtons = {};
+const quizButtons = [];
+
+function el(tag, cls, html) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (html !== undefined) e.innerHTML = html;
+  return e;
+}
+
+function buildUI() {
+  const m = $("matrix");
+  const at = (e, row, col) => { e.style.gridRow = row; e.style.gridColumn = col; m.append(e); };
+
+  at(el("div", "axis", "Visitor"), 1, "3 / span 3");
+  VISITORS.forEach(([letter, freq], c) =>
+    at(el("div", "col-head", `${letter}<br><small>${freq}</small>`), 2, 3 + c));
+
+  at(el("div", "axis target", "Target"), "3 / span 3", 1);
+  TARGETS.forEach(([num, name], r) =>
+    at(el("div", "row-head", `${num} <small>${name}</small>`), 3 + r, 2));
+
+  for (let r = 0; r < 3; r++) {
+    for (let c = 0; c < 3; c++) {
+      const btn = el("button", "cell", "P");
+      btn.setAttribute("aria-label", `Play ${soundName([r, c])}`);
+      btn.addEventListener("click", () => onPlay([r, c]));
+      at(btn, 3 + r, 3 + c);
+      playButtons[key(r, c)] = btn;
+    }
+  }
+
+  const quizButton = (row, col, cells, title) => {
+    const btn = el("button", "cell q", "Q");
+    btn.setAttribute("aria-label", `Quiz: ${title}`);
+    btn.title = `Quiz: ${title}`;
+    btn.addEventListener("click", () => startQuiz(cells, title));
+    at(btn, row, col);
+    quizButtons.push(btn);
+  };
+  for (let r = 0; r < 3; r++) {
+    quizButton(3 + r, 6, [0, 1, 2].map(c => [r, c]), `Target ${TARGETS[r][0]} (${TARGETS[r][1]})`);
+  }
+  for (let c = 0; c < 3; c++) {
+    quizButton(6, 3 + c, [0, 1, 2].map(r => [r, c]), `Visitor ${VISITORS[c][0]} (${VISITORS[c][1]})`);
+  }
+  const all = [];
+  for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++) all.push([r, c]);
+  quizButton(6, 6, all, "All sounds");
+
+  $("replay").addEventListener("click", replay);
+  $("stop").addEventListener("click", stopQuiz);
+
+  const vol = $("vol");
+  vol.max = MAX_GAIN_PCT;
+  const showVol = () => { $("vol-out").textContent = vol.value; };
+  vol.addEventListener("input", showVol);
+  const nudge = d => {
+    vol.value = Math.max(0, Math.min(MAX_GAIN_PCT, Number(vol.value) + d));
+    showVol();
+  };
+  $("vol-down").addEventListener("click", () => nudge(-25));
+  $("vol-up").addEventListener("click", () => nudge(25));
+  showVol();
+}
+
+function paint(btn, state) {
+  btn.classList.remove("choice", "right", "wrong");
+  if (state) btn.classList.add(state);
+}
+
+function setEnabled(enabled) {
+  for (const b of [...Object.values(playButtons), ...quizButtons]) b.disabled = !enabled;
+}
+
+function colorButtons() {
+  for (const [k, btn] of Object.entries(playButtons)) {
+    if (quiz.active) {
+      const enabled = quiz.candidates.some(cell => key(...cell) === k);
+      paint(btn, enabled ? "choice" : null);
+      btn.disabled = !enabled;
+    } else {
+      paint(btn, null);
+      btn.disabled = false;
+    }
+  }
+}
+
+const setMode = t => { $("mode").textContent = t; };
+const setMessage = t => { $("message").textContent = t; };
+
+// ---------------------------------------------------------------- Learn
+function onPlay(cell) {
+  if (!loaded) return;
+  if (!quiz.active) play(cell);
+  else if (quiz.awaitingAnswer) answer(cell);
+}
+
+// ---------------------------------------------------------------- Quiz
+const quiz = {
+  active: false,
+  title: "",
+  candidates: [],
+  trials: [],
+  index: 0,
+  current: null,
+  awaitingAnswer: false,
+  results: [],          // list of [playedCell, answeredCell]
+  pending: null,
+};
+
+function shuffle(a) {
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+function startQuiz(cells, title) {
+  if (!loaded) return;
+  if (ctx.state !== "running") ctx.resume();  // unlock audio inside the click
+  quiz.active = true;
+  quiz.title = title;
+  quiz.candidates = cells;
+  // Balanced random order: every candidate appears about equally often.
+  const pool = [];
+  while (pool.length < NUM_TRIALS) pool.push(...shuffle([...cells]));
+  quiz.trials = pool.slice(0, NUM_TRIALS);
+  quiz.index = 0;
+  quiz.results = [];
+
+  setMode(`Quiz mode: ${title}`);
+  quizButtons.forEach(b => { b.disabled = true; });
+  $("stop").disabled = false;
+  colorButtons();
+  setMessage("Get ready...");
+  quiz.pending = setTimeout(nextTrial, FIRST_DELAY_MS);
+}
+
+function nextTrial() {
+  quiz.pending = null;
+  if (quiz.index >= NUM_TRIALS) {
+    finishQuiz();
+    return;
+  }
+  colorButtons();
+  quiz.current = quiz.trials[quiz.index];
+  quiz.awaitingAnswer = true;
+  $("replay").disabled = false;
+  setMessage(`Sound ${quiz.index + 1} of ${NUM_TRIALS}: which one was it?`);
+  play(quiz.current);
+}
+
+function replay() {
+  if (quiz.active && quiz.current) play(quiz.current);
+}
+
+function answer(cell) {
+  quiz.awaitingAnswer = false;
+  $("replay").disabled = true;
+  quiz.results.push([quiz.current, cell]);
+  if (sameCell(cell, quiz.current)) {
+    paint(playButtons[key(...cell)], "right");
+    setMessage("Correct!");
+  } else {
+    paint(playButtons[key(...cell)], "wrong");
+    paint(playButtons[key(...quiz.current)], "right");
+    setMessage(`No, that was ${soundName(quiz.current)}`);
+  }
+  quiz.index++;
+  quiz.pending = setTimeout(nextTrial, NEXT_DELAY_MS);
+}
+
+function finishQuiz() {
+  const right = quiz.results.filter(([p, a]) => sameCell(p, a)).length;
+  const n = quiz.results.length;
+  const pct = Math.round(100 * right / n);
+  const grade = letterGrade(pct);
+
+  $("res-title").textContent = quiz.title;
+  $("res-score").textContent = `Score: ${right} / ${n}  (${pct}%)`;
+  $("res-grade").textContent = `Grade: ${grade}`;
+  const list = $("mistakes");
+  list.replaceChildren();
+  const mistakes = quiz.results.filter(([p, a]) => !sameCell(p, a));
+  for (const [played, answered] of mistakes) {
+    const li = el("li");
+    li.textContent = `played ${soundName(played)} — you chose ${soundName(answered)}`;
+    list.append(li);
+  }
+  $("res-mistakes-wrap").hidden = mistakes.length === 0;
+
+  endQuiz();
+  setMessage(`Last quiz: ${right}/${n} (${pct}%) grade ${grade}`);
+  const dlg = $("results");
+  if (dlg.showModal) dlg.showModal();
+  else alert(`${quiz.title}\nScore: ${right} / ${n} (${pct}%)\nGrade: ${grade}`);
+}
+
+function stopQuiz() {
+  endQuiz();
+  setMessage("Quiz stopped. Press a Q button to start a quiz");
+}
+
+function endQuiz() {
+  if (quiz.pending !== null) {
+    clearTimeout(quiz.pending);
+    quiz.pending = null;
+  }
+  stopSound();
+  quiz.active = false;
+  quiz.awaitingAnswer = false;
+  quiz.current = null;
+  setMode("Learn mode: press P to hear a sound");
+  quizButtons.forEach(b => { b.disabled = false; });
+  $("replay").disabled = true;
+  $("stop").disabled = true;
+  colorButtons();
+}
+
+// ---------------------------------------------------------------- Start
+buildUI();
+setEnabled(false);
+loadSounds().then(() => {
+  loaded = true;
+  setEnabled(true);
+  $("loading").remove();
+}).catch(err => {
+  const l = $("loading");
+  l.classList.add("error");
+  l.textContent = location.protocol === "file:"
+    ? "The sounds can't load from a file on disk. Use the GitHub Pages link, or run " +
+      "\"python3 -m http.server\" in this folder and open http://localhost:8000"
+    : `Could not load the sounds: ${err.message}`;
+});
+</script>
+</body>
+</html>

@@ -13,6 +13,18 @@ The nine sounds in `ScottsClicks/` form a 3 × 3 matrix:
 Each visitor is a whale clicking in a slightly different frequency range;
 each target is a different echo.
 
+## Play in your browser (no install)
+
+**<https://orcasound.github.io/thewhale-clicks/>**
+
+Same game, nothing to install. It runs on phones and tablets too (on an
+iPhone or iPad, turn off the silent switch). The page is `index.html`; it
+loads the sounds from `ScottsClicks/`, so to try it locally serve the folder
+(`python3 -m http.server`, then open <http://localhost:8000>) rather than
+opening the file directly.
+
+The rest of this README is for running the desktop version.
+
 ## Setup
 
 Requires Python 3.8+ with Tkinter, plus `git`. The Python packages
