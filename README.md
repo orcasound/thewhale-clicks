@@ -13,6 +13,8 @@ The nine sounds in `ScottsClicks/` form a 3 × 3 matrix:
 Each visitor is a whale clicking in a slightly different frequency range;
 each target is a different echo.
 
+Original click sounds came from Scott.  Val edited them so all have the same background outside of the click and echo portions.
+
 ## Play in your browser (no install)
 
 **<https://orcasound.github.io/thewhale-clicks/>**
